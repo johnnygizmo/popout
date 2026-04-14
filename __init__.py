@@ -18,23 +18,23 @@ bl_info = {
 
 
 class POPOUT_PG_settings(PropertyGroup):
-    open_without_tool_header = BoolProperty(
+    open_without_tool_header: BoolProperty(
         name="Hide Tool Header",
         description="Hide the tool header in the duplicated area",
         default=False,
     )
-    
-    open_without_header = BoolProperty(
+
+    open_without_header: BoolProperty(
         name="Hide Header",
         description="Hide the header in the duplicated area",
         default=False,
     )
-    open_without_overlays = BoolProperty(
+    open_without_overlays: BoolProperty(
         name="Hide Overlays",
         description="Hide overlays in the duplicated area",
         default=False,
     )
-    open_without_gizmo = BoolProperty(
+    open_without_gizmo: BoolProperty(
         name="Hide Gizmo",
         description="Hide the gizmo in the duplicated area",
         default=False,
@@ -67,6 +67,7 @@ def _apply_settings_to_space(space, settings, source_camera=None):
         region_3d = getattr(space, "region_3d", None)
         if region_3d is not None and hasattr(region_3d, "view_perspective"):
             region_3d.view_perspective = "CAMERA"
+            
 
 
 def _find_and_configure_new_window(existing_window_ids, source_area_type, settings, source_camera):
@@ -95,6 +96,21 @@ def _find_and_configure_new_window(existing_window_ids, source_area_type, settin
             continue
 
         _apply_settings_to_space(space, settings, source_camera=source_camera)
+
+        if source_camera is not None and target_area.type == "VIEW_3D":
+            region = next(
+                (r for r in target_area.regions if r.type == "WINDOW"), None
+            )
+            if region is not None:
+                with bpy.context.temp_override(
+                    window=window,
+                    screen=screen,
+                    area=target_area,
+                    region=region,
+                    space_data=space,
+                ):
+                    bpy.ops.view3d.zoom_camera_1_to_1()
+
         return None
 
     return 0.05
@@ -106,11 +122,46 @@ class POPOUT_OT_open_window(Operator):
     bl_description = "Open the current area in a new Blender window"
     bl_options = {"REGISTER"}
 
+    open_without_tool_header: BoolProperty(
+        name="Hide Tool Header",
+        description="Hide the tool header in the duplicated area",
+        default=False,
+    )
+    open_without_header: BoolProperty(
+        name="Hide Header",
+        description="Hide the header in the duplicated area",
+        default=False,
+    )
+    open_without_overlays: BoolProperty(
+        name="Hide Overlays",
+        description="Hide overlays in the duplicated area",
+        default=False,
+    )
+    open_without_gizmo: BoolProperty(
+        name="Hide Gizmo",
+        description="Hide the gizmo in the duplicated area",
+        default=False,
+    )
+
+    def invoke(self, context, event):
+        settings = context.window_manager.popout_settings
+        self.open_without_tool_header = settings.open_without_tool_header
+        self.open_without_header = settings.open_without_header
+        self.open_without_overlays = settings.open_without_overlays
+        self.open_without_gizmo = settings.open_without_gizmo
+        return context.window_manager.invoke_props_dialog(self, title="Pop Out Options")
+
+    def draw(self, context):
+        layout = self.layout
+        layout.prop(self, "open_without_tool_header")
+        layout.prop(self, "open_without_header")
+        layout.prop(self, "open_without_overlays")
+        layout.prop(self, "open_without_gizmo")
+
     def execute(self, context):
         if context.area is None or context.window is None:
             return {"CANCELLED"}
 
-        settings = context.window_manager.popout_settings
         existing_window_ids = {window.as_pointer() for window in context.window_manager.windows}
         source_area_type = context.area.type
         source_camera = None
@@ -131,11 +182,13 @@ class POPOUT_OT_open_window(Operator):
         if "CANCELLED" in result:
             return {"CANCELLED"}
 
+        op_settings = self
+
         def _timer_callback():
             return _find_and_configure_new_window(
                 existing_window_ids,
                 source_area_type,
-                settings,
+                op_settings,
                 source_camera,
             )
 
