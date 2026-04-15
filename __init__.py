@@ -21,25 +21,30 @@ class POPOUT_PG_settings(PropertyGroup):
     open_without_tool_header: BoolProperty(
         name="Hide Tool Header",
         description="Hide the tool header in the duplicated area",
-        default=False,
-    )
+        default=True,
+    )#type: ignore
 
     open_without_header: BoolProperty(
         name="Hide Header",
         description="Hide the header in the duplicated area",
-        default=False,
-    )
+        default=True,
+    )#type: ignore
     open_without_overlays: BoolProperty(
         name="Hide Overlays",
         description="Hide overlays in the duplicated area",
-        default=False,
-    )
+        default=True,
+    )#type: ignore
     open_without_gizmo: BoolProperty(
         name="Hide Gizmo",
         description="Hide the gizmo in the duplicated area",
-        default=False,
-    )
+        default=True,
+    )#type: ignore
 
+    open_unselectable_objects: BoolProperty(
+        name="Make Objects Unselectable",
+        description="Make all objects unselectable in the duplicated area",
+        default=True,
+    ) #type: ignore
 
 def _apply_settings_to_space(space, settings, source_camera=None):
     if settings.open_without_tool_header and hasattr(space, "show_region_tool_header"):
@@ -67,6 +72,32 @@ def _apply_settings_to_space(space, settings, source_camera=None):
         region_3d = getattr(space, "region_3d", None)
         if region_3d is not None and hasattr(region_3d, "view_perspective"):
             region_3d.view_perspective = "CAMERA"
+
+        # Set shading type to Material Preview
+        if hasattr(space, "shading") and hasattr(space.shading, "type"):
+            space.shading.type = 'MATERIAL'
+            space.shading.use_scene_lights = False
+            space.shading.use_scene_world = False
+            space.shading.use_compositor = 'DISABLED'
+            space.shading.render_pass = 'COMBINED'
+
+        if settings.open_unselectable_objects:
+                space.show_object_select_mesh = False
+                space.show_object_select_curve = False
+                space.show_object_select_surf = False
+                space.show_object_select_meta = False            
+                space.show_object_select_font = False
+                space.show_object_select_curves = False
+                space.show_object_select_pointcloud= False
+                space.show_object_select_volume = False            
+                space.show_object_select_grease_pencil = False            
+                space.show_object_select_armature = False            
+                space.show_object_select_lattice = False
+                space.show_object_select_empty = False
+                space.show_object_select_light = False
+                space.show_object_select_light_probe = False
+                space.show_object_select_camera = False            
+                space.show_object_select_speaker = False
             
 
 
@@ -110,6 +141,9 @@ def _find_and_configure_new_window(existing_window_ids, source_area_type, settin
                     space_data=space,
                 ):
                     bpy.ops.view3d.zoom_camera_1_to_1()
+                    region_3d = getattr(space, "region_3d", None)
+                    if region_3d is not None and hasattr(region_3d, "lock_rotation"):
+                        region_3d.lock_rotation = True
 
         return None
 
@@ -126,29 +160,37 @@ class POPOUT_OT_open_window(Operator):
         name="Hide Tool Header",
         description="Hide the tool header in the duplicated area",
         default=False,
-    )
+    )#type: ignore
     open_without_header: BoolProperty(
         name="Hide Header",
         description="Hide the header in the duplicated area",
         default=False,
-    )
+    )#type: ignore
     open_without_overlays: BoolProperty(
         name="Hide Overlays",
         description="Hide overlays in the duplicated area",
         default=False,
-    )
+    )#type: ignore
     open_without_gizmo: BoolProperty(
         name="Hide Gizmo",
         description="Hide the gizmo in the duplicated area",
         default=False,
-    )
-
+    )#type: ignore
+    open_unselectable_objects: BoolProperty(
+        name="Make Objects Unselectable",
+        description="Make all objects unselectable in the duplicated area",
+        default=True
+    ) #type: ignore
     def invoke(self, context, event):
+        if context.area is None or context.area.type != "VIEW_3D":
+            return {"CANCELLED"}
+
         settings = context.window_manager.popout_settings
         self.open_without_tool_header = settings.open_without_tool_header
         self.open_without_header = settings.open_without_header
         self.open_without_overlays = settings.open_without_overlays
         self.open_without_gizmo = settings.open_without_gizmo
+        self.open_unselectable_objects = settings.open_unselectable_objects
         return context.window_manager.invoke_props_dialog(self, title="Pop Out Options")
 
     def draw(self, context):
@@ -157,6 +199,7 @@ class POPOUT_OT_open_window(Operator):
         layout.prop(self, "open_without_header")
         layout.prop(self, "open_without_overlays")
         layout.prop(self, "open_without_gizmo")
+        layout.prop(self, "open_unselectable_objects")
 
     def execute(self, context):
         if context.area is None or context.window is None:
@@ -211,6 +254,7 @@ class POPOUT_PT_panel(Panel):
         layout.prop(settings, "open_without_header")
         layout.prop(settings, "open_without_overlays")
         layout.prop(settings, "open_without_gizmo")
+        layout.prop(settings, "open_unselectable_objects")
         layout.separator()
         layout.operator(POPOUT_OT_open_window.bl_idname, icon="WINDOW")
 
@@ -218,8 +262,20 @@ class POPOUT_PT_panel(Panel):
 classes = (
     POPOUT_PG_settings,
     POPOUT_OT_open_window,
-    POPOUT_PT_panel,
-)
+    #POPOUT_PT_panel,
+) 
+
+
+def menu_func(self, context):
+    area = getattr(context, "area", None)
+    if area is None:
+        return
+
+    # Only show the operator in 3D View areas
+    if getattr(area, "type", None) != "VIEW_3D":
+        return
+
+    self.layout.operator(POPOUT_OT_open_window.bl_idname, icon="WINDOW")
 
 
 def register():
@@ -228,9 +284,20 @@ def register():
 
     bpy.types.WindowManager.popout_settings = PointerProperty(type=POPOUT_PG_settings)
 
+    try:
+        bpy.types.INFO_MT_area.append(menu_func)
+    except Exception:
+        pass
+
 
 def unregister():
-    del bpy.types.WindowManager.popout_settings
+    try:
+        bpy.types.INFO_MT_area.remove(menu_func)
+    except Exception:
+        pass
+
+    if hasattr(bpy.types.WindowManager, "popout_settings"):
+        del bpy.types.WindowManager.popout_settings
 
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
