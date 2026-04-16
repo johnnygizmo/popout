@@ -3,7 +3,7 @@ schema_version = "1.0.0"
 # Example of manifest file for a Blender extension
 # Change the values according to your extension
 id = "johnnygizmo_popout"
-version = "1.0.3"
+version = "1.0.4"
 name = "Popout Window Plus"
 tagline = "Duplicate the active area into a new window with options"
 maintainer = "Johnny Matthews"
