@@ -41,8 +41,14 @@ class POPOUT_PG_settings(PropertyGroup):
     )#type: ignore
 
     open_unselectable_objects: BoolProperty(
-        name="Make Objects Unselectable",
+        name="Make Everything Unselectable",
         description="Make all objects unselectable in the duplicated area",
+        default=True,
+    ) #type: ignore
+    
+    open_locked: BoolProperty(
+        name="Lock View",
+        description="Lock the view in the duplicated area to prevent navigation",
         default=True,
     ) #type: ignore
 
@@ -99,6 +105,10 @@ def _apply_settings_to_space(space, settings, source_camera=None):
                 space.show_object_select_camera = False            
                 space.show_object_select_speaker = False
             
+                if settings.open_locked:
+                    region_3d = getattr(space, "region_3d", None)
+                    if region_3d is not None and hasattr(region_3d, "lock_rotation"):
+                        region_3d.lock_rotation = True
 
 
 def _find_and_configure_new_window(existing_window_ids, source_area_type, settings, source_camera):
@@ -133,17 +143,25 @@ def _find_and_configure_new_window(existing_window_ids, source_area_type, settin
                 (r for r in target_area.regions if r.type == "WINDOW"), None
             )
             if region is not None:
-                with bpy.context.temp_override(
-                    window=window,
-                    screen=screen,
-                    area=target_area,
-                    region=region,
-                    space_data=space,
-                ):
-                    bpy.ops.view3d.zoom_camera_1_to_1()
-                    region_3d = getattr(space, "region_3d", None)
-                    if region_3d is not None and hasattr(region_3d, "lock_rotation"):
-                        region_3d.lock_rotation = True
+                def _zoom_callback():
+                    try:
+                        with bpy.context.temp_override(
+                            window=window,
+                            screen=screen,
+                            area=target_area,
+                            region=region,
+                            space_data=space,
+                        ):
+                            bpy.ops.view3d.zoom_camera_1_to_1()
+                    except Exception:
+                        pass
+                    return None
+
+                bpy.app.timers.register(_zoom_callback, first_interval=0.1)
+
+                region_3d = getattr(space, "region_3d", None)
+                if settings.open_locked and region_3d is not None and hasattr(region_3d, "lock_rotation"):
+                    region_3d.lock_rotation = True
 
         return None
 
@@ -152,7 +170,7 @@ def _find_and_configure_new_window(existing_window_ids, source_area_type, settin
 
 class POPOUT_OT_open_window(Operator):
     bl_idname = "popout.open_window"
-    bl_label = "Pop Out Current Area"
+    bl_label = "Pop Out Plus"
     bl_description = "Open the current area in a new Blender window"
     bl_options = {"REGISTER"}
 
@@ -177,10 +195,16 @@ class POPOUT_OT_open_window(Operator):
         default=False,
     )#type: ignore
     open_unselectable_objects: BoolProperty(
-        name="Make Objects Unselectable",
+        name="Make Everything Unselectable",
         description="Make all objects unselectable in the duplicated area",
         default=True
     ) #type: ignore
+    open_locked: BoolProperty(
+        name="Lock View",
+        description="Lock the view in the duplicated area to prevent navigation",
+        default=True,
+    ) #type: ignore
+    
     def invoke(self, context, event):
         if context.area is None or context.area.type != "VIEW_3D":
             return {"CANCELLED"}
@@ -191,6 +215,7 @@ class POPOUT_OT_open_window(Operator):
         self.open_without_overlays = settings.open_without_overlays
         self.open_without_gizmo = settings.open_without_gizmo
         self.open_unselectable_objects = settings.open_unselectable_objects
+        self.open_locked = settings.open_locked
         return context.window_manager.invoke_props_dialog(self, title="Pop Out Options")
 
     def draw(self, context):
@@ -200,6 +225,7 @@ class POPOUT_OT_open_window(Operator):
         layout.prop(self, "open_without_overlays")
         layout.prop(self, "open_without_gizmo")
         layout.prop(self, "open_unselectable_objects")
+        layout.prop(self, "open_locked")
 
     def execute(self, context):
         if context.area is None or context.window is None:
@@ -255,6 +281,7 @@ class POPOUT_PT_panel(Panel):
         layout.prop(settings, "open_without_overlays")
         layout.prop(settings, "open_without_gizmo")
         layout.prop(settings, "open_unselectable_objects")
+        layout.prop(settings, "open_locked")
         layout.separator()
         layout.operator(POPOUT_OT_open_window.bl_idname, icon="WINDOW")
 
